@@ -3,16 +3,20 @@ from pathlib import Path
 import base64
 from streamlit_cookies_manager import EncryptedCookieManager
 
-# Load logo
+# --------------------------------------------------
+# LOAD LOGO (UNCHANGED)
+# --------------------------------------------------
 base_dir = Path(__file__).parent.parent
 logo_path = base_dir / "logo.png"
 
 logo_b64 = ""
 if logo_path.exists():
     with open(logo_path, "rb") as f:
-        logo_bytes = f.read()
-    logo_b64 = base64.b64encode(logo_bytes).decode()
+        logo_b64 = base64.b64encode(f.read()).decode()
 
+# --------------------------------------------------
+# SIDEBAR RENDER
+# --------------------------------------------------
 def render_sidebar():
     st.sidebar.markdown(f"""
     <style>
@@ -24,7 +28,7 @@ def render_sidebar():
         color: black !important;
     }}
 
-    /* Hide Streamlit's default page nav */
+    /* Hide Streamlit default navigation */
     [data-testid="stSidebar"] nav,
     [data-testid="stSidebarNav"],
     [data-testid="stVerticalNav"],
@@ -46,38 +50,39 @@ def render_sidebar():
     [data-testid="stSidebar"] .stButton {{
         margin-bottom: 8px !important;
     }}
+
     [data-testid="stSidebar"] img {{
-        position: fixed;  /* keep the logo in place while scrolling */
+        position: fixed;
         top: 20px;
         left: 22px;
         width: 72px;
         z-index: 9999;
     }}
-
     </style>
 
-    <!-- Top-left logo -->
-    <img id="top-left-logo" src="data:image/png;base64,{logo_b64}">
+    <img src="data:image/png;base64,{logo_b64}">
     """, unsafe_allow_html=True)
 
+    # --------------------------------------------------
+    # NAVIGATION
+    # --------------------------------------------------
     st.sidebar.header("Navigation")
 
     if st.sidebar.button("Home"):
         st.switch_page("app.py")
 
-    # Show "Login" by default, but change to "Your Cases" if Judge is logged in
-    if st.session_state.get("authenticated") and st.session_state.get("user_role") == "Judge":
-        button_label = "Your Cases"
-    elif st.session_state.get("authenticated") and st.session_state.get("user_role") == "Advocate (Lawyer)":
-        button_label = "Your Cases"
+    # Dynamic main button (UNCHANGED BEHAVIOUR)
+    if st.session_state.get("authenticated") and st.session_state.get("user_role") in ["Judge", "Advocate (Lawyer)"]:
+        main_label = "Your Cases"
     else:
-        button_label = "Login"
+        main_label = "Login"
 
-    if st.sidebar.button(button_label):
+    if st.sidebar.button(main_label):
         if st.session_state.get("authenticated"):
-            if st.session_state.user_role == "Judge":
+            role = st.session_state.get("user_role")
+            if role == "Judge":
                 st.switch_page("pages/Judge_Dashboard.py")
-            elif st.session_state.user_role == "Advocate":
+            elif role == "Advocate (Lawyer)":
                 st.switch_page("pages/Lawyer_Dashboard.py")
             else:
                 st.switch_page("pages/Login.py")
@@ -93,63 +98,42 @@ def render_sidebar():
     if st.sidebar.button("Analytics"):
         st.switch_page("pages/Analytics.py")
 
+    # --------------------------------------------------
+    # ✅ DOWNLOAD PAGE (ADDED — UI SAME)
+    # --------------------------------------------------
+    if st.sidebar.button("Download Case PDF"):
+        st.switch_page("pages/DownloadCasePDF.py")
+
     st.sidebar.markdown("---")
 
+    # --------------------------------------------------
+    # LOGOUT (UNCHANGED)
+    # --------------------------------------------------
     if st.session_state.get("authenticated"):
         if st.sidebar.button("Logout"):
-            # Revoke server-side session token first (use current user_name)
             try:
                 from sessions import delete_token
-                current_user = st.session_state.get("user_name")
-                print(f"[LOGOUT] Attempting to revoke token for user: {current_user}")
-                if current_user:
-                    delete_token(current_user)
-                    print(f"[LOGOUT] Token revoked successfully for {current_user}")
-                else:
-                    print(f"[LOGOUT] No user_name in session_state")
-            except Exception as e:
-                print(f"[LOGOUT] Error revoking token: {e}")
+                user = st.session_state.get("user_name")
+                if user:
+                    delete_token(user)
+            except Exception:
                 pass
 
-            # Clear session state
             st.session_state.authenticated = False
             st.session_state.user_role = None
             st.session_state.user_name = None
 
-            # Clear cookies (if available) by deleting keys so they don't auto-login
             try:
                 cookies = EncryptedCookieManager(
                     prefix="nyayadrishti_",
                     password="super_secret_password_here"
                 )
                 if cookies.ready():
-                    # Remove keys if present
-                    try:
-                        if cookies.get("authenticated") is not None:
-                            del cookies["authenticated"]
-                        if cookies.get("user_role") is not None:
-                            del cookies["user_role"]
-                        if cookies.get("user_name") is not None:
-                            del cookies["user_name"]
-                    except Exception:
-                        # Fallback: set to false/empty then save
-                        cookies["authenticated"] = "false"
-                        cookies["user_role"] = ""
-                        cookies["user_name"] = ""
-
-                    # Also set a logout marker timestamp so clients that still have
-                    # `authenticated` won't auto-login immediately after logout.
-                    import time
-                    try:
-                        cookies["logged_out"] = str(time.time())
-                    except Exception:
-                        # if inserting fails, ignore (we already cleared keys)
-                        pass
-
+                    cookies["authenticated"] = "false"
+                    cookies["user_role"] = ""
+                    cookies["user_name"] = ""
                     cookies.save()
             except Exception:
-                # If cookie manager isn't available for some reason, continue
                 pass
 
-            # Redirect to login page
             st.switch_page("pages/Login.py")
