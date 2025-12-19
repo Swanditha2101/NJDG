@@ -1,6 +1,8 @@
 import streamlit as st
 import tempfile
 import os
+import io
+import qrcode
 
 from reportlab.platypus import (
     SimpleDocTemplate,
@@ -10,8 +12,6 @@ from reportlab.platypus import (
     TableStyle,
     Image,
 )
-from reportlab.graphics.barcode import qr
-from reportlab.graphics.shapes import Drawing
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -60,7 +60,7 @@ def generate_case_pdf(row):
     logo_path = "logo.png"
     if os.path.exists(logo_path):
         header = [
-            [Image(logo_path, 50, 100),
+            [Image(logo_path, 50, 50),
              Paragraph("<b>Nyayadrishti</b><br/>Judicial Case Summary", styles["Title"])]
         ]
     else:
@@ -96,26 +96,28 @@ def generate_case_pdf(row):
     story.append(Spacer(1, 20))
 
     # ---------- QR CODE ----------
-    # Dynamic URL: use secrets if available, else fallback
     try:
         base_url = st.secrets["APP_URL"]
     except:
         base_url = "http://localhost:8501"
 
     verify_url = f"{base_url}/VerifyCase?cnr={row['cnr_number']}"
-    qr_code = qr.QrCodeWidget(verify_url)
-    bounds = qr_code.getBounds()
-    width = bounds[2] - bounds[0]
-    height = bounds[3] - bounds[1]
-    drawing = Drawing(120, 120, transform=[120/width, 0, 0, 120/height, 0, 0])
-    drawing.add(qr_code)
+
+    # Generate QR code in memory
+    qr_img = qrcode.make(verify_url)
+    qr_bytes = io.BytesIO()
+    qr_img.save(qr_bytes, format='PNG')
+    qr_bytes.seek(0)
+
     story.append(Paragraph("<b>Scan QR to verify case authenticity</b>", styles["Heading3"]))
-    story.append(drawing)
+    story.append(Spacer(1, 5))
+    story.append(Image(qr_bytes, width=120, height=120))
     story.append(Spacer(1, 10))
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    SimpleDocTemplate(tmp.name, pagesize=A4).build(story)
-    return tmp.name
+    # ---------- PDF OUTPUT ----------
+    tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    SimpleDocTemplate(tmp_pdf.name, pagesize=A4).build(story)
+    return tmp_pdf.name
 
 # ------------------ ACTIONS ------------------
 if "case" in st.session_state:
