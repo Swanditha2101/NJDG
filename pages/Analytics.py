@@ -1,171 +1,157 @@
 import streamlit as st
 import plotly.express as px
 import pandas as pd
+
 from preprocessing import load_data, clean_cases, clean_hearings, merge_data
 from helpers.sidebar import render_sidebar
 from components.language import render_language_header
 
+# --------------------------------------------------
+# Page Config
+# --------------------------------------------------
 st.set_page_config(
     page_title="Analytics",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
 render_language_header()
+render_sidebar()
+
 st.markdown("""
 <style>
 [data-testid="stSidebar"] {
     background-color: #F8FAFC !important;
 }
-
 [data-testid="stSidebar"] * {
     color: black !important;
-}
-
-/* Dropdown menu options */
-[data-testid="stSidebar"] .stMultiSelect [role="listbox"] [role="option"] {
-    background-color: #FFFFFF !important;
-    color: #0A0A1F !important;
-}
-
-/* Hover state */
-[data-testid="stSidebar"] .stMultiSelect [role="listbox"] [role="option"]:hover {
-    background-color: #e6e6f0 !important;
-    color: #0A0A1F !important;
-}
-
-/* Selected option */
-[data-testid="stSidebar"] .stMultiSelect [role="listbox"] [aria-selected="true"] {
-    background-color: #d9d9ec !important;
-    color: #0A0A1F !important;
-}
-
-/* Sidebar multiselect tag background and text */
-[data-testid="stSidebar"] [data-baseweb="tag"] {
-    background-color: #0A0A1F !important;
-    color: white !important;
-    border-radius: 4px;
-}
-
-/* Force white text inside tag content */
-[data-testid="stSidebar"] [data-baseweb="tag"] * {
-    color: white !important;
-}
-
-/* Close (×) icon inside each tag */
-[data-testid="stSidebar"] [data-baseweb="tag"] svg {
-    fill: white !important;
-}
-
-/* Optional: dropdown arrow color */
-[data-testid="stSidebar"] .stMultiSelect [data-baseweb="select"] svg {
-    fill: white !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-render_sidebar()
+st.title("Judicial Analytics Dashboard")
 
-cases, hearings = load_data()
-cases = clean_cases(cases)
-hearings = clean_hearings(hearings)
-merged = merge_data(cases, hearings)
+# --------------------------------------------------
+# Load & Preprocess Data (CACHED)
+# --------------------------------------------------
+@st.cache_data(show_spinner=False)
+def load_all_data():
+    cases, hearings = load_data()
+    cases = clean_cases(cases)
+    hearings = clean_hearings(hearings)
+    merged = merge_data(cases, hearings)
+    return cases, hearings, merged
 
+cases, hearings, merged = load_all_data()
+
+# --------------------------------------------------
+# Sidebar Filters
+# --------------------------------------------------
 st.sidebar.header("Filters")
 
 years = sorted(cases["filing_year"].dropna().unique())
 
 selected_years = st.sidebar.multiselect(
     "Select Filing Years",
-    years,
-    default=years  # show all by default
+    options=years,
+    default=years,
 )
 
-filtered_cases = (
-    cases[cases["filing_year"].isin(selected_years)]
-    if selected_years else cases
-)
+def filter_by_year(df, col="filing_year"):
+    if selected_years and col in df.columns:
+        return df[df[col].isin(selected_years)]
+    return df
 
-filtered_merged = (
-    merged[merged["filing_year"].isin(selected_years)]
-    if selected_years and "filing_year" in merged.columns else merged
-)
+filtered_cases = filter_by_year(cases)
+filtered_merged = filter_by_year(merged)
 
-# Join hearings with cases to get filing_year
-if "case_id" in hearings.columns and "case_id" in cases.columns:
+# Attach filing year to hearings
+if {"case_id", "filing_year"}.issubset(cases.columns) and "case_id" in hearings.columns:
     hearings_with_year = hearings.merge(
         cases[["case_id", "filing_year"]],
         on="case_id",
-        how="left"
+        how="left",
     )
-    filtered_hearings = (
-        hearings_with_year[hearings_with_year["filing_year"].isin(selected_years)]
-        if selected_years else hearings_with_year
-    )
+    filtered_hearings = filter_by_year(hearings_with_year)
 else:
     filtered_hearings = hearings
 
-st.title("Analytics Dashboard")
-
-total_civil = len(filtered_cases)
-total_criminal = 0
-total_cases = total_civil + total_criminal
-older_than_1yr = len(filtered_cases[filtered_cases["disposal_days"] > 365])
-
-# === CASE CLEARANCE RATE ===
-disposed_cases = filtered_cases[
-    filtered_cases["disposal_days"].notna() & (filtered_cases["disposal_days"] > 0)
-].shape[0]
+# --------------------------------------------------
+# High-Level Metrics
+# --------------------------------------------------
+total_cases = len(filtered_cases)
+disposed_cases = filtered_cases["disposal_days"].gt(0).sum()
 pending_cases = total_cases - disposed_cases
-case_clearance_rate = (disposed_cases / total_cases * 100) if total_cases > 0 else 0
+older_than_1yr = filtered_cases["disposal_days"].gt(365).sum()
 
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Total Civil Cases", total_civil)
-col2.metric("Total Criminal Cases", total_criminal)
-col3.metric("Disposed Cases", disposed_cases)
-col4.metric("Pending > 1 Year", older_than_1yr)
-col5.metric("Case Clearance Rate", f"{case_clearance_rate:.2f}%", help="Disposed cases ÷ total filed cases")
+case_clearance_rate = (
+    disposed_cases / total_cases * 100 if total_cases > 0 else 0
+)
+
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Total Cases", total_cases)
+c2.metric("Disposed Cases", disposed_cases)
+c3.metric("Pending Cases", pending_cases)
+c4.metric("Pending > 1 Year", older_than_1yr)
+c5.metric(
+    "Case Clearance Rate",
+    f"{case_clearance_rate:.2f}%",
+    help="Disposed cases ÷ total cases (selected years)",
+)
 
 st.markdown("---")
 
+# --------------------------------------------------
+# Tabs
+# --------------------------------------------------
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Case Funnel",
     "Disposal Trend",
     "Judge Workload",
-    "Disposal Days Distribution",
-    "CCR Trend"
+    "Disposal Distribution",
+    "CCR Trend",
 ])
 
-# TAB 1 — Case Funnel
+# --------------------------------------------------
+# TAB 1 — Case Funnel (FIXED)
+# --------------------------------------------------
 with tab1:
-    st.subheader("Case Stage Funnel")
-    if "remappedstages" in filtered_merged.columns:
-        funnel_df = filtered_merged["remappedstages"].value_counts().reset_index()
-        funnel_df.columns = ["Stage", "Count"]
+    st.subheader("Case Progress Funnel")
 
-        custom_dark_blues = ["#08306b", "#08519c", "#2171b5", "#4292c6", "#6baed6", "#9ecae1"]
+    if "remappedstages" in filtered_merged.columns:
+        funnel_df = (
+            filtered_merged["remappedstages"]
+            .value_counts()
+            .reset_index()
+        )
+        # 🔥 CRITICAL FIX
+        funnel_df.columns = ["Stage", "Count"]
 
         fig = px.funnel(
             funnel_df,
             x="Count",
             y="Stage",
-            color="Stage",
-            color_discrete_sequence=custom_dark_blues
+            title="Cases Across Judicial Stages",
         )
-        st.plotly_chart(fig, width='stretch')
+
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Column 'remappedstages' not found in merged data.")
+        st.warning("Stage data not available.")
 
+# --------------------------------------------------
 # TAB 2 — Disposal Trend
+# --------------------------------------------------
 with tab2:
-    st.subheader("Disposal Time by Filing Year")
+    st.subheader("Average Disposal Time by Filing Year")
 
-    if "filing_year" in filtered_cases.columns and "disposal_days" in filtered_cases.columns:
-        filtered_cases["filing_year"] = filtered_cases["filing_year"].astype(int)
+    if {"filing_year", "disposal_days"}.issubset(filtered_cases.columns):
+        trend_df = filtered_cases.copy()
+        trend_df["filing_year"] = trend_df["filing_year"].astype(int)
 
         trend = (
-            filtered_cases.groupby("filing_year")["disposal_days"]
+            trend_df
+            .groupby("filing_year", as_index=False)["disposal_days"]
             .mean()
-            .reset_index()
         )
 
         trend["filing_year"] = trend["filing_year"].astype(str)
@@ -175,34 +161,36 @@ with tab2:
             x="filing_year",
             y="disposal_days",
             markers=True,
-            title="Average Disposal Days per Filing Year"
+            title="Average Disposal Days per Filing Year",
         )
-
-        # Force categorical axis
         fig.update_xaxes(type="category")
 
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Trend columns missing.")
+        st.warning("Required columns missing.")
 
+# --------------------------------------------------
 # TAB 3 — Judge Workload
+# --------------------------------------------------
 with tab3:
     st.subheader("Judge Hearing Workload")
 
-    judge_col_candidates = [
+    judge_columns = [
         "before_honourable_judges",
         "before_hon_judge",
-        "njdg_judge_name"
+        "njdg_judge_name",
     ]
+
     judge_col = next(
-        (col for col in judge_col_candidates if col in filtered_hearings.columns),
-        None
+        (col for col in judge_columns if col in filtered_hearings.columns),
+        None,
     )
 
     if judge_col:
         judge_df = (
             filtered_hearings[judge_col]
             .value_counts()
+            .head(15)
             .reset_index()
         )
         judge_df.columns = ["Judge", "Hearings"]
@@ -211,14 +199,18 @@ with tab3:
             judge_df,
             x="Judge",
             y="Hearings",
-            title="Hearings per Judge (Filtered by Year)",
-            color="Hearings"
+            title="Top Judges by Hearing Count",
+            color="Hearings",
         )
-        st.plotly_chart(fig, width='stretch')
-    else:
-        st.warning("No judge column found.")
 
-# TAB 4 — Histogram
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("Top 15 judges by number of hearings")
+    else:
+        st.warning("Judge information not found.")
+
+# --------------------------------------------------
+# TAB 4 — Disposal Distribution
+# --------------------------------------------------
 with tab4:
     st.subheader("Distribution of Disposal Days")
 
@@ -227,36 +219,46 @@ with tab4:
             filtered_cases,
             x="disposal_days",
             nbins=40,
-            title="Disposal Time Distribution"
+            title="Disposal Time Distribution",
         )
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("No disposal days column found.")
+        st.warning("Disposal days column not found.")
 
-# TAB 5 — CCR Trend
+# --------------------------------------------------
+# TAB 5 — Case Clearance Rate Trend
+# --------------------------------------------------
 with tab5:
     st.subheader("Case Clearance Rate by Filing Year")
-    
-    unique_id_col = "cnr_number"  # <--- change this to your unique case column
 
-    if "filing_year" in filtered_cases.columns and unique_id_col in filtered_cases.columns:
+    unique_case_id = "cnr_number"
+
+    if {"filing_year", unique_case_id}.issubset(filtered_cases.columns):
         ccr_df = (
             filtered_cases
-            .assign(disposed=lambda x: x["disposal_days"].notna() & (x["disposal_days"] > 0))
+            .assign(disposed=lambda x: x["disposal_days"].gt(0))
             .groupby("filing_year", as_index=False)
             .agg(
-                total_cases=(unique_id_col, "count"),
-                disposed_cases=("disposed", "sum")
+                total_cases=(unique_case_id, "count"),
+                disposed_cases=("disposed", "sum"),
             )
         )
 
-        ccr_df["CCR (%)"] = ccr_df["disposed_cases"] / ccr_df["total_cases"] * 100
+        ccr_df["CCR (%)"] = (
+            ccr_df["disposed_cases"] / ccr_df["total_cases"] * 100
+        )
         ccr_df["filing_year"] = ccr_df["filing_year"].astype(str)
 
-        fig = px.line(ccr_df, x="filing_year", y="CCR (%)", markers=True, title="CCR Trend")
+        fig = px.line(
+            ccr_df,
+            x="filing_year",
+            y="CCR (%)",
+            markers=True,
+            title="Case Clearance Rate Trend",
+        )
         fig.update_yaxes(range=[0, 100])
         fig.update_xaxes(type="category")
 
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Filing year or unique case ID column not available.")
+        st.warning("Required columns missing for CCR.")
