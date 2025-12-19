@@ -307,19 +307,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    if st.button("About Us"):
-        st.switch_page("pages/About.py")
-
-with col2:
-    if st.button("Help"):
-        st.switch_page("pages/Help.py")
-
-with col3:
-    if st.button("Privacy Policy"):
-        st.switch_page("pages/Privacy.py")
+# Navigation styled like footer
+st.markdown("""
+<div style="text-align:center; margin-top:10px;">
+    <a href="/About" target="_self" style="color:#94A3B8; font-size:13px; text-decoration:none; margin:0 15px;">About Us</a>
+    <a href="/Help" target="_self" style="color:#94A3B8; font-size:13px; text-decoration:none; margin:0 15px;">Help</a>
+    <a href="/Privacy" target="_self" style="color:#94A3B8; font-size:13px; text-decoration:none; margin:0 15px;">Privacy Policy</a>
+</div>
+""", unsafe_allow_html=True)
 
 
 
