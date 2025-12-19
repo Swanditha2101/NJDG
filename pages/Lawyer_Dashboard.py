@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import timedelta
 from streamlit_cookies_manager import EncryptedCookieManager
-from components.language import render_language_header, t
+from components.language import render_language_header
 
 from preprocessing import load_data, clean_cases, clean_hearings, merge_data
 from helpers.sidebar import render_sidebar
@@ -37,7 +37,7 @@ if not st.session_state.get("authenticated") and auto_login(cookies):
     st.session_state.user_name = cookies.get("user_name")
 
 if not st.session_state.get("authenticated"):
-    st.warning(t("login_first"))
+    st.warning(("login_first"))
     st.switch_page("pages/Login.py")
 
 render_sidebar()
@@ -79,10 +79,10 @@ portfolio = df[
 ]
 
 if portfolio.empty:
-    st.info(t("no_cases"))
+    st.info(("no_cases"))
     st.stop()
 
-st.success(f"{t('logged_in_as')} {lawyer}")
+st.success(f"{('logged_in_as')} {lawyer}")
 
 # -------------------------------------------------
 # LAWYER HEALTH
@@ -95,13 +95,13 @@ hearings_7 = portfolio[
 pressure = 0.4 * len(active) + 0.3 * len(hearings_7)
 lawyer_health = int(np.clip(100 - pressure * 2, 0, 100))
 
-st.subheader(t("lawyer_health"))
-st.metric(t("lawyer_health"), f"{lawyer_health} / 100")
+st.subheader(("lawyer_health"))
+st.metric(("lawyer_health"), f"{lawyer_health} / 100")
 
 # -------------------------------------------------
 # PORTFOLIO
 # -------------------------------------------------
-st.subheader(t("your_cases"))
+st.subheader(("your_cases"))
 st.dataframe(
     portfolio[
         ["cnr_number", "case_number", "current_status", "case_health_score", "nexthearingdate"]
@@ -112,7 +112,7 @@ st.dataframe(
 # -------------------------------------------------
 # WORKSPACE
 # -------------------------------------------------
-st.subheader(t("case_workspace"))
+st.subheader(("case_workspace"))
 cnr = st.text_input("CNR Number")
 
 notes = load_notes()
@@ -123,9 +123,9 @@ if cnr:
     if not case.empty:
         row = case.iloc[0]
 
-        st.markdown(f"### {t('notes')}")
+        st.markdown(f"### {('notes')}")
         note_text = st.text_area("", notes.get(cnr, ""))
-        if st.button(t("save_notes")):
+        if st.button(("save_notes")):
             notes[cnr] = note_text
             save_notes(notes)
             st.success("Saved")
@@ -138,7 +138,7 @@ if cnr:
 # -------------------------------------------------
 # REMINDERS
 # -------------------------------------------------
-st.subheader(t("reminders"))
+st.subheader(("reminders"))
 if reminders:
     st.dataframe(pd.DataFrame(reminders.items(), columns=["CNR", "Date"]), use_container_width=True)
 else:
