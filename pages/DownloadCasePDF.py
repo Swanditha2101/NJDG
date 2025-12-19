@@ -149,11 +149,11 @@ if case is not None:
     # --------------------------------------------------
     st.subheader("Download")
 
-    if st.button("📥 Generate PDF"):
+    if st.button("Generate PDF"):
         pdf_path = generate_case_pdf(case)
         with open(pdf_path, "rb") as f:
             st.download_button(
-                "⬇️ Download Case PDF",
+                "Download Case PDF",
                 data=f,
                 file_name=f"{case.get('cnr_number', 'case')}_case_summary.pdf",
                 mime="application/pdf",
